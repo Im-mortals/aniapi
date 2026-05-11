@@ -6,41 +6,33 @@ from config import *
 
 def fetch_data_from_db():
     """
-    Fetch the raw data from the anime_data.txt file in the GitHub repository.
+    Fetch the data using the API with 'raw' headers.
+    This bypasses the 1MB limit and uses your token for high rate limits.
     """
     url = f"https://api.github.com/repos/{OWNER}/{REPO}/contents/{PATH}"
+    
+    # Header 1: Your Token for permission/rate-limiting
+    # Header 2: 'vnd.github.v3.raw' tells GitHub "Just give me the text, not the JSON metadata"
     headers = {
-        "Authorization": f"token {GIT_TOKEN}"
+        "Authorization": f"token {GIT_TOKEN}",
+        "Accept": "application/vnd.github.v3.raw"
     }
 
     response = requests.get(url, headers=headers)
     
     if response.status_code == 200:
-        # Check if the response is a list or a dictionary
-        data = response.json()
-
-        if isinstance(data, list):
-            print("Error: Unexpected response format. List received instead of dictionary.")
-            return None, None
+        decoded_content = response.text  # This will be your full 1MB+ text
         
-        # Now handle the expected dictionary format
-        file_content = data.get('content', None)
-        if not file_content:
-            print("Error: No content found in the file.")
-            return None, None
+        # We still need the SHA for updating the file later
+        # So we make a quick second call WITHOUT the 'raw' header to get metadata
+        meta_headers = {"Authorization": f"token {GIT_TOKEN}"}
+        meta_response = requests.get(url, headers=meta_headers)
+        sha = meta_response.json().get('sha') if meta_response.status_code == 200 else None
         
-        try:
-            # Decode base64 content into the original string
-            decoded_content = base64.b64decode(file_content).decode("utf-8")
-        except Exception as e:
-            print(f"Error decoding base64 content: {e}")
-            return None, None
-
-        sha = data.get('sha', None)  # Safely get the sha
-        return decoded_content, sha  # Return decoded content and sha
+        return decoded_content, sha
     else:
-        print("Error fetching data from GitHub:", response.status_code)
-        return None, None
+        print(f"Error fetching data: {response.status_code}")
+        return "", None
 
 def update_data_in_db(new_json_data):
     """
